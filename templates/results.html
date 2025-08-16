@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Matching Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="container">
+        <section class="card">
+            <h2>Matching Results</h2>
+
+            <div class="progress-container">
+                <div class="progress-label">Skill Match:</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ match_percentage | default(0, true) }}%;">
+                        {{ match_percentage | default(0, true) }}%
+                    </div>
+                </div>
+                
+            </div>
+
+            <div class="skill-columns">
+                <div class="column">
+                    <h3>✅ Matched Skills</h3>
+                    {% for skill in matched_skills %}
+                        <p>{{ skill }}</p>
+                    {% endfor %}
+                </div>
+
+                <div class="column">
+                    <h3>💡 Skills You Can Add</h3>
+                    {% for skill in missing_skills %}
+                        <p><span style="background: yellow;">{{ skill }}</span></p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="suggestions">
+                <h3>Suggestions</h3>
+                <p>{{ suggested_skills_sentence }}</p>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3>📄 Job Description (with Missing Skills Highlighted)</h3>
+            <p>{{ highlighted_jd | safe }}</p>
+        </section>
+    </main>
+</body>
+</html>

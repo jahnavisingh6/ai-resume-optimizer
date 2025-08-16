@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Resume Optimizer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- NAVIGATION -->
+    <nav>
+        <div class="logo">Resume Optimizer</div>
+        <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#confidentiality">Confidentiality</a></li>
+        </ul>
+    </nav>
+
+    <!-- HERO -->
+    <header class="hero">
+        <h1>Optimize Your Resume</h1>
+        <p>Align your resume with job descriptions & stand out</p>
+    </header>
+
+    <main class="container">
+        <!-- Resume Upload + JD Input -->
+        <section class="card">
+            <h2>Upload Resume + Paste Job Description</h2>
+            <form action="/upload_resume" method="post" enctype="multipart/form-data">
+                <input type="file" name="resume" required>
+                <input type="text" name="manual_name" placeholder="Enter your name (optional)">
+                <textarea name="job_description" rows="8" placeholder="Paste job description here..." required></textarea>
+                <button type="submit">Submit</button>
+            </form>
+        </section>
+
+        <!-- ABOUT -->
+        <section class="card" id="about">
+            <h2>About This Tool</h2>
+            <p>
+                This AI-powered Resume Optimizer helps you match your resume to job descriptions by identifying aligned skills and suggesting improvements. 
+                It is designed to support students, job seekers, and professionals who want to tailor their resume for better alignment with job opportunities.
+                All processing is done locally and temporarily to protect your privacy.
+            </p>
+        </section>
+
+        <!-- CONFIDENTIALITY -->
+        <section class="card" id="confidentiality">
+            <h2>Confidentiality</h2>
+            <p>
+                This tool does not store or share any uploaded resumes or job descriptions. All processing is done in your local session,
+                and the data is cleared immediately after analysis. For best results, avoid uploading personal identifiers like your full address or phone number.
+            </p>
+        </section>
+    </main>
+</body>
+</html>
