@@ -11,15 +11,22 @@
             <h2>Matching Results</h2>
 
             <div class="progress-container">
-                <div class="progress-label">Skill Match:</div>
+                <div class="progress-label">Overall Match (TF‑IDF Similarity):</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ tfidf_match_score | default(0, true) }}%;">
+                        {{ tfidf_match_score | default(0, true) }}%
+                    </div>
+                </div>
+            </div>
+
+            <div class="progress-container">
+                <div class="progress-label">Skill Match (Keyword Overlap):</div>
                 <div class="progress-bar">
                     <div class="progress-fill" style="width: {{ match_percentage | default(0, true) }}%;">
                         {{ match_percentage | default(0, true) }}%
                     </div>
                 </div>
-                
             </div>
-
             <div class="skill-columns">
                 <div class="column">
                     <h3>✅ Matched Skills</h3>
@@ -37,9 +44,18 @@
             </div>
 
             <div class="suggestions">
-                <h3>Suggestions</h3>
+                <h3>Suggestions (Keyword-Based)</h3>
                 <p>{{ suggested_skills_sentence }}</p>
             </div>
+
+            {% if llm_suggestions %}
+            <div class="suggestions">
+                <h3>AI-Powered Resume Improvement Suggestions</h3>
+                <div>
+                    {{ llm_suggestions | safe }}
+                </div>
+            </div>
+            {% endif %}
         </section>
 
         <section class="card">
