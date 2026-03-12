@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+
 class Resume(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100))
@@ -13,16 +14,4 @@ class Resume(db.Model):
     company_names = db.Column(db.Text)
     skills = db.Column(db.Text)
     total_experience = db.Column(db.Float)
-
-    def __init__(self, name, email, mobile_number, college_name, degree, designation, company_names, skills, total_experience):
-        self.name = name
-        self.email = email
-        self.mobile_number = mobile_number
-        self.college_name = college_name
-        self.degree = degree
-        self.designation = designation
-        self.company_names = company_names
-        self.skills = skills
-        self.total_experience = total_experience
-
 

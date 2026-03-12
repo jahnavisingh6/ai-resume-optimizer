@@ -1,6 +1,12 @@
-from pyresparser import ResumeParser
-print(ResumeParser)
+from app import app
 
-import spacy
-nlp = spacy.load("en_core_web_sm")
-print("SpaCy Model Loaded Successfully!")
+
+def run_smoke_test():
+    client = app.test_client()
+    response = client.get("/")
+    assert response.status_code == 200
+    print("Smoke test passed: index route returned 200")
+
+
+if __name__ == "__main__":
+    run_smoke_test()

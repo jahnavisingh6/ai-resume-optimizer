@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+resume_optimizer.db
+.env
+.DS_Store

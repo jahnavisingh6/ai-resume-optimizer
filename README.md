@@ -17,7 +17,7 @@ An AI-driven resume optimization tool that analyzes resumes against job descript
   - Keyword-based suggestions (which skills to add).
   - Optional ChatGPT/OpenAI-powered suggestions for phrasing and impact (when an API key is provided).
 - **Web-based interface**: Simple Flask app where users upload a resume and paste a job description, then see scores, gaps, and suggestions.
-- **Persistent storage**: Stores parsed resume data in a PostgreSQL database via SQLAlchemy for later querying and analysis.
+- **Persistent storage**: Stores parsed resume data in SQLite by default, or PostgreSQL via environment configuration.
 
 ---
 
@@ -25,7 +25,7 @@ An AI-driven resume optimization tool that analyzes resumes against job descript
 
 - **Backend**: Python, Flask, SQLAlchemy
 - **NLP & Matching**: PyResparser, spaCy, scikit-learn (TF–IDF, cosine similarity), NLTK
-- **Database**: PostgreSQL
+- **Database**: SQLite by default, PostgreSQL optional
 - **AI Suggestions (optional)**: OpenAI/ChatGPT APIs
 - **Frontend**: Flask templates (HTML + CSS)
 
@@ -95,29 +95,18 @@ pip install -r requirements.txt
 The `requirements.txt` includes PyResparser, spaCy, scikit-learn, Flask, SQLAlchemy, and the OpenAI client.  
 Make sure the `en_core_web_sm` spaCy model is installed (the file already references a wheel URL).
 
-### 4. Configure PostgreSQL
+### 4. Configure the database
 
-Update `config.py` with your PostgreSQL credentials:
+The app now works out of the box with a local SQLite file. No extra setup is required for local development.
 
-```python
-DB_USERNAME = "your_username"
-DB_PASSWORD = "your_password"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "resume_parser_db"
-```
-
-Create the database once in PostgreSQL (e.g., via `psql`, pgAdmin, or a GUI).
+To use PostgreSQL instead, export either `DATABASE_URL` or the individual `DB_*` environment variables before starting the app.
 
 ### 5. Initialize the database tables
 
-From a Python shell in the project directory:
+Create tables once with:
 
 ```bash
-python
->>> from app import db
->>> db.create_all()
->>> exit()
+python init_db.py
 ```
 
 ### 6. (Optional) Configure OpenAI / ChatGPT
@@ -130,7 +119,7 @@ export OPENAI_API_KEY="your_api_key_here"  # macOS/Linux
 # $env:OPENAI_API_KEY="your_api_key_here"
 ```
 
-If this is not set, the app will still run and show all non-LLM features (parsing, TF–IDF score, skill match, keyword suggestions).
+If this is not set, the app will still run and show all non-LLM features.
 
 ### 7. Run the Flask app
 
@@ -139,6 +128,16 @@ python app.py
 ```
 
 By default, the app runs on `http://127.0.0.1:5000/`.
+
+If `pyresparser` or its NLP models are missing, the app will still load and return limited analysis instead of crashing.
+
+### 8. Deploying on Vercel + Supabase
+
+- Host the Flask app on Vercel.
+- Use Supabase PostgreSQL for `DATABASE_URL`.
+- For Vercel/serverless deployments, create tables ahead of time with `python init_db.py` instead of creating them at startup.
+- Add `SECRET_KEY`, `DATABASE_URL`, and optionally `OPENAI_API_KEY` as environment variables.
+- Use the Supabase pooled connection string when possible.
 
 Open that URL in your browser, upload a resume, paste a job description, and view:
 - Overall TF–IDF similarity score
@@ -183,4 +182,3 @@ Built a full-stack AI-driven resume optimization tool that analyzes resumes agai
 - 🌐 Portfolio: https://jahnavi-theta.vercel.app/
 - 💼 LinkedIn: https://www.linkedin.com/in/jahnavisingh6/
 - 📧 Email: jahnavisingh6@gmail.com
-

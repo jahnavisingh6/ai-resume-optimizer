@@ -1,162 +1,227 @@
 from flask import Flask, render_template, request
-from flask_sqlalchemy import SQLAlchemy
-from pyresparser import ResumeParser
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from openai import OpenAI
+from markupsafe import escape
+from werkzeug.utils import secure_filename
 import os
-import nltk
 import re
 
-nltk.download('stopwords')
+from models import Resume, db
 
-app = Flask(__name__)
-app.config.from_pyfile('config.py')
-db = SQLAlchemy(app)
+try:
+    from pyresparser import ResumeParser
+except Exception:
+    ResumeParser = None
 
 # Initialize OpenAI client (expects OPENAI_API_KEY in environment).
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+COMMON_SKILLS = [
+    "python",
+    "sql",
+    "pandas",
+    "numpy",
+    "tableau",
+    "excel",
+    "aws",
+    "html",
+    "css",
+    "javascript",
+    "react",
+    "node.js",
+]
+ALLOWED_EXTENSIONS = {"pdf", "doc", "docx"}
 
-class Resume(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100))
-    email = db.Column(db.String(100))
-    mobile_number = db.Column(db.String(20))
-    college_name = db.Column(db.String(200))
-    degree = db.Column(db.String(200))
-    designation = db.Column(db.String(200))
-    company_names = db.Column(db.Text)
-    skills = db.Column(db.Text)
-    total_experience = db.Column(db.Float)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/upload_resume', methods=['POST'])
-def upload_resume():
-    file = request.files['resume']
-    jd_raw = request.form['job_description']
-    jd = jd_raw.lower()
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(file_path)
 
-    # Parse resume into structured fields using PyResparser.
-    data = ResumeParser(file_path).get_extracted_data()
-    resume = Resume(
-        name=data.get('name', ''),
-        email=data.get('email', ''),
-        mobile_number=data.get('mobile_number', ''),
-        college_name=', '.join(data.get('college_name', [])) if data.get('college_name') else '',
-        degree=', '.join(data.get('degree', [])) if data.get('degree') else '',
-        designation=', '.join(data.get('designation', [])) if data.get('designation') else '',
-        company_names=', '.join(data.get('company_names', [])) if data.get('company_names') else '',
-        skills=', '.join(data.get('skills', [])) if data.get('skills') else '',
-        total_experience=data.get('total_experience', 0.0)
-    )
-    db.session.add(resume)
-    db.session.commit()
+def safe_join(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if item)
+    return str(value)
 
-    # Build a free-text representation of the resume for TF-IDF similarity.
+
+def extract_resume_data(file_path: str, manual_name: str = ""):
+    parser_warning = None
+    data = {}
+
+    if ResumeParser is None:
+        parser_warning = "PyResparser is not installed. Showing limited results without resume parsing."
+    else:
+        try:
+            data = ResumeParser(file_path).get_extracted_data() or {}
+        except Exception:
+            parser_warning = "Resume parsing failed. Showing limited results without parsed resume details."
+            data = {}
+
+    if manual_name and not data.get("name"):
+        data["name"] = manual_name.strip()
+
+    return data, parser_warning
+
+
+def build_resume_text(data: dict) -> str:
     text_chunks = []
-    for key in ['name', 'college_name', 'degree', 'designation', 'company_names']:
+    for key in ["name", "college_name", "degree", "designation", "company_names"]:
         value = data.get(key)
         if isinstance(value, list):
-            text_chunks.extend([str(v) for v in value])
+            text_chunks.extend(str(v) for v in value if v)
         elif value:
             text_chunks.append(str(value))
 
-    skills_list = data.get('skills') or []
-    if isinstance(skills_list, list):
-        text_chunks.extend(skills_list)
-    else:
-        text_chunks.append(str(skills_list))
+    skills = data.get("skills") or []
+    if isinstance(skills, list):
+        text_chunks.extend(str(skill) for skill in skills if skill)
+    elif skills:
+        text_chunks.append(str(skills))
 
-    experience = data.get('experience')
+    experience = data.get("experience")
     if isinstance(experience, list):
-        text_chunks.extend([str(e) for e in experience])
+        text_chunks.extend(str(item) for item in experience if item)
     elif experience:
         text_chunks.append(str(experience))
 
-    resume_text = " ".join(text_chunks).strip()
+    return " ".join(text_chunks).strip()
 
-    # Compute TF-IDF based semantic similarity score between resume and job description.
-    if resume_text and jd_raw.strip():
-        vectorizer = TfidfVectorizer(stop_words='english')
-        tfidf_matrix = vectorizer.fit_transform([resume_text, jd_raw])
-        similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-        tfidf_match_score = round(similarity * 100, 2)
-    else:
-        tfidf_match_score = 0.0
 
-    # Skill-level overlap (to identify clearly missing skills).
-    common_skills = ['python', 'sql', 'pandas', 'numpy', 'tableau', 'excel', 'aws', 'html', 'css', 'javascript', 'react', 'node.js']
-    resume_skills = [s.strip().lower() for s in resume.skills.split(',') if s.strip()]
-    jd_skills = [skill for skill in common_skills if skill in jd]
-
-    matched_skills = [skill for skill in jd_skills if skill in resume_skills]
-    missing_skills = [skill for skill in jd_skills if skill not in resume_skills]
-    match_percentage = round(len(matched_skills) / len(jd_skills) * 100, 2) if jd_skills else 0
-    suggested_skills_sentence = "💡 Consider adding: " + ", ".join(missing_skills) if missing_skills else "✅ You're all set!"
-
-    # Highlight missing skills in the original-cased job description.
-    highlighted_jd = jd_raw
+def highlight_missing_skills(job_description: str, missing_skills: list[str]) -> str:
+    highlighted = escape(job_description)
     for skill in missing_skills:
-        if skill not in matched_skills:
-            highlighted_jd = re.sub(
-                rf"\b{re.escape(skill)}\b",
-                f"<span style='background: yellow'>{skill}</span>",
-                highlighted_jd,
-                flags=re.IGNORECASE
-            )
+        highlighted = re.sub(
+            rf"\b{re.escape(skill)}\b",
+            f"<span class='skill-highlight'>{escape(skill)}</span>",
+            str(highlighted),
+            flags=re.IGNORECASE,
+        )
+    return highlighted
 
-    # Generate richer resume improvement suggestions via OpenAI (if configured).
-    llm_suggestions = None
-    if openai_client and resume_text and jd_raw.strip():
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_pyfile("config.py")
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+    db.init_app(app)
+
+    @app.route("/")
+    def index():
+        return render_template("index.html")
+
+    @app.route("/upload_resume", methods=["POST"])
+    def upload_resume():
+        file = request.files.get("resume")
+        jd_raw = request.form.get("job_description", "").strip()
+        manual_name = request.form.get("manual_name", "").strip()
+
+        if not file or not file.filename:
+            return render_template("results.html", error_message="Please upload a resume file."), 400
+        if not jd_raw:
+            return render_template("results.html", error_message="Please paste a job description."), 400
+        if not allowed_file(file.filename):
+            return render_template("results.html", error_message="Please upload a PDF, DOC, or DOCX file."), 400
+
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(file_path)
+
         try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an expert resume coach helping a candidate tailor their resume "
-                            "to a specific job description. Focus on keyword alignment, quantifiable "
-                            "impact, and strong action verbs."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Job description:\n{jd_raw}\n\n"
-                            f"Extracted resume skills: {', '.join(resume_skills)}\n"
-                            f"Matched skills: {', '.join(matched_skills) or 'None'}\n"
-                            f"Missing skills: {', '.join(missing_skills) or 'None'}\n"
-                            f"TF-IDF match score: {tfidf_match_score}%\n\n"
-                            "Give 4–6 bullet points with specific, ATS-friendly suggestions to improve "
-                            "this resume for this job. Mention where to add or rephrase content."
-                        ),
-                    },
-                ],
-            )
-            llm_suggestions = response.choices[0].message.content.strip()
-        except Exception:
-            llm_suggestions = None
+            data, parser_warning = extract_resume_data(file_path, manual_name=manual_name)
+        finally:
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
 
-    return render_template(
-        'results.html',
-        match_percentage=match_percentage,
-        matched_skills=matched_skills,
-        missing_skills=missing_skills,
-        suggested_skills_sentence=suggested_skills_sentence,
-        highlighted_jd=highlighted_jd,
-        tfidf_match_score=tfidf_match_score,
-        llm_suggestions=llm_suggestions,
-    )
+        resume = Resume(
+            name=data.get("name", manual_name),
+            email=data.get("email", ""),
+            mobile_number=data.get("mobile_number", ""),
+            college_name=safe_join(data.get("college_name")),
+            degree=safe_join(data.get("degree")),
+            designation=safe_join(data.get("designation")),
+            company_names=safe_join(data.get("company_names")),
+            skills=safe_join(data.get("skills")),
+            total_experience=float(data.get("total_experience") or 0.0),
+        )
+        db.session.add(resume)
+        db.session.commit()
 
-if __name__ == '__main__':
+        resume_text = build_resume_text(data)
+
+        if resume_text:
+            vectorizer = TfidfVectorizer(stop_words="english")
+            tfidf_matrix = vectorizer.fit_transform([resume_text, jd_raw])
+            similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+            tfidf_match_score = round(similarity * 100, 2)
+        else:
+            tfidf_match_score = 0.0
+
+        jd_lower = jd_raw.lower()
+        resume_skills = [s.strip().lower() for s in resume.skills.split(",") if s.strip()]
+        jd_skills = [skill for skill in COMMON_SKILLS if skill in jd_lower]
+        matched_skills = [skill for skill in jd_skills if skill in resume_skills]
+        missing_skills = [skill for skill in jd_skills if skill not in resume_skills]
+        match_percentage = round(len(matched_skills) / len(jd_skills) * 100, 2) if jd_skills else 0
+        suggested_skills_sentence = (
+            "Consider adding: " + ", ".join(missing_skills) if missing_skills else "No obvious skill gaps found."
+        )
+        highlighted_jd = highlight_missing_skills(jd_raw, missing_skills)
+
+        llm_suggestions = None
+        if openai_client and jd_raw:
+            try:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are an expert resume coach helping a candidate tailor their resume "
+                                "to a specific job description. Focus on keyword alignment, quantifiable "
+                                "impact, and strong action verbs."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Job description:\n{jd_raw}\n\n"
+                                f"Extracted resume skills: {', '.join(resume_skills) or 'None'}\n"
+                                f"Matched skills: {', '.join(matched_skills) or 'None'}\n"
+                                f"Missing skills: {', '.join(missing_skills) or 'None'}\n"
+                                f"TF-IDF match score: {tfidf_match_score}%\n\n"
+                                "Give 4-6 bullet points with ATS-friendly suggestions to improve the resume. "
+                                "Mention where to add or rephrase content."
+                            ),
+                        },
+                    ],
+                )
+                llm_suggestions = response.choices[0].message.content.strip()
+            except Exception:
+                llm_suggestions = None
+
+        return render_template(
+            "results.html",
+            error_message=None,
+            parser_warning=parser_warning,
+            match_percentage=match_percentage,
+            matched_skills=matched_skills,
+            missing_skills=missing_skills,
+            suggested_skills_sentence=suggested_skills_sentence,
+            highlighted_jd=highlighted_jd,
+            tfidf_match_score=tfidf_match_score,
+            llm_suggestions=llm_suggestions,
+        )
+
+    return app
+
+
+app = create_app()
+
+
+if __name__ == "__main__":
     app.run(debug=True)
